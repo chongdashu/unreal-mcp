@@ -20,6 +20,7 @@
 #include "Subsystems/EditorActorSubsystem.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 
 FUnrealMCPEditorCommands::FUnrealMCPEditorCommands()
 {
@@ -411,67 +412,80 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'actor_name' parameter"));
     }
 
-    // Find the blueprint
-    if (BlueprintName.IsEmpty())
+    TArray<FAssetData> MatchingAssets = FUnrealMCPCommonUtils::FindBlueprintAssets(BlueprintName);
+
+    if (MatchingAssets.Num() == 0)
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint name is empty"));
+        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("No matching assets found for '%s'"), *BlueprintName));
     }
-
-    FString Root      = TEXT("/Game/Blueprints/");
-    FString AssetPath = Root + BlueprintName;
-
-    if (!FPackageName::DoesPackageExist(AssetPath))
+    else if (MatchingAssets.Num() == 1)
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint '%s' not found – it must reside under /Game/Blueprints"), *BlueprintName));
-    }
+        // Single match, proceed to spawn
+        FString AssetPath = MatchingAssets[0].GetObjectPathString();
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
+        if (!Blueprint)
+        {
+            return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to load Blueprint: %s"), *AssetPath));
+        }
+        
+        // Get transform parameters
+        FVector Location(0.0f, 0.0f, 0.0f);
+        FRotator Rotation(0.0f, 0.0f, 0.0f);
+        FVector Scale(1.0f, 1.0f, 1.0f);
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
-    if (!Blueprint)
+        if (Params->HasField(TEXT("location")))
+        {
+            Location = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("location"));
+        }
+        if (Params->HasField(TEXT("rotation")))
+        {
+            Rotation = FUnrealMCPCommonUtils::GetRotatorFromJson(Params, TEXT("rotation"));
+        }
+        if (Params->HasField(TEXT("scale")))
+        {
+            Scale = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("scale"));
+        }
+        // Spawn the actor
+        UWorld* World = GEditor->GetEditorWorldContext().World();
+        if (!World)
+        {
+            return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
+        }
+
+        FTransform SpawnTransform;
+        SpawnTransform.SetLocation(Location);
+        SpawnTransform.SetRotation(FQuat(Rotation));
+        SpawnTransform.SetScale3D(Scale);
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Name = *ActorName;
+
+        AActor* NewActor = World->SpawnActor<AActor>(Blueprint->GeneratedClass, SpawnTransform, SpawnParams);
+        if (NewActor)
+        {
+            return FUnrealMCPCommonUtils::ActorToJsonObject(NewActor, true);
+        }
+
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn actor"));
+    }
+    else
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+        // Multiple matches, ask user to choose
+        TArray<TSharedPtr<FJsonValue>> AssetChoices;
+        for (const FAssetData& AssetData : MatchingAssets)
+        {
+            TSharedPtr<FJsonObject> AssetInfo = MakeShared<FJsonObject>();
+            AssetInfo->SetStringField(TEXT("name"), AssetData.AssetName.ToString());
+            AssetInfo->SetStringField(TEXT("path"), AssetData.ObjectPath.ToString());
+            AssetChoices.Add(MakeShared<FJsonValueObject>(AssetInfo));
+        }
+
+        TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
+        Response->SetArrayField(TEXT("choices"), AssetChoices);
+        return Response;
     }
-
-    // Get transform parameters
-    FVector Location(0.0f, 0.0f, 0.0f);
-    FRotator Rotation(0.0f, 0.0f, 0.0f);
-    FVector Scale(1.0f, 1.0f, 1.0f);
-
-    if (Params->HasField(TEXT("location")))
-    {
-        Location = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("location"));
-    }
-    if (Params->HasField(TEXT("rotation")))
-    {
-        Rotation = FUnrealMCPCommonUtils::GetRotatorFromJson(Params, TEXT("rotation"));
-    }
-    if (Params->HasField(TEXT("scale")))
-    {
-        Scale = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("scale"));
-    }
-
-    // Spawn the actor
-    UWorld* World = GEditor->GetEditorWorldContext().World();
-    if (!World)
-    {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
-    }
-
-    FTransform SpawnTransform;
-    SpawnTransform.SetLocation(Location);
-    SpawnTransform.SetRotation(FQuat(Rotation));
-    SpawnTransform.SetScale3D(Scale);
-
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.Name = *ActorName;
-
-    AActor* NewActor = World->SpawnActor<AActor>(Blueprint->GeneratedClass, SpawnTransform, SpawnParams);
-    if (NewActor)
-    {
-        return FUnrealMCPCommonUtils::ActorToJsonObject(NewActor, true);
-    }
-
-    return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn blueprint actor"));
 }
+
 
 TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFocusViewport(const TSharedPtr<FJsonObject>& Params)
 {
@@ -597,4 +611,4 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleTakeScreenshot(const TSh
     }
     
     return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to take screenshot"));
-} 
+}

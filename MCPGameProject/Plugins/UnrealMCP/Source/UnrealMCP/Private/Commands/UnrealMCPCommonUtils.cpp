@@ -706,4 +706,92 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
     OutErrorMessage = FString::Printf(TEXT("Unsupported property type: %s for property %s"), 
                                     *Property->GetClass()->GetName(), *PropertyName);
     return false;
-} 
+}
+
+TArray<FAssetData> FUnrealMCPCommonUtils::FindBlueprintAssets(const FString& BlueprintAssetName)
+{
+    // Normalize input: backslash slash, trim whitespace
+    FString Name = BlueprintAssetName;
+    Name.ReplaceInline(TEXT("\\"), TEXT("/"));
+    Name.TrimStartAndEndInline();
+
+    // Handle Copy Reference format: extract path between single quotes
+    if (Name.StartsWith(TEXT("/Script/"), ESearchCase::IgnoreCase))
+    {
+        int32 StartIdx, EndIdx;
+        if (Name.FindChar(TEXT('\''), StartIdx) &&
+            Name.FindLastChar(TEXT('\''), EndIdx) &&
+            EndIdx > StartIdx)
+        {
+            Name = Name.Mid(StartIdx + 1, EndIdx - StartIdx - 1);
+            // Now Name should be like "/Game/Path/Asset.Asset"
+        }
+    }
+
+    FString AssetBaseName;
+    FString PackagePath;
+
+    // Absolute path: "/Game/..."
+    if (Name.StartsWith(TEXT("/Game/"), ESearchCase::IgnoreCase))
+    {
+        // Strip off the ".AssetName" suffix if present
+        FString BasePackage = Name;
+        int32 DotIdx = 0;
+        if (BasePackage.FindLastChar(TEXT('.'), DotIdx))
+        {
+            // Keep only the part before the dot
+            BasePackage = BasePackage.Left(DotIdx);
+        }
+
+        // Use PackageName helpers to split folder vs. asset
+        AssetBaseName = FPackageName::GetShortName(BasePackage);
+        PackagePath = FPackageName::GetLongPackagePath(BasePackage);
+    }
+    // Relative path: "Folder/Subfolder/Asset"
+    else if (Name.Contains(TEXT("/")))
+    {
+        // remove any leading slash just in case
+        FString Rel = Name.StartsWith(TEXT("/")) ? Name.Mid(1) : Name;
+        int32 SlashIdx;
+        Rel.FindLastChar(TEXT('/'), SlashIdx);
+
+        // folder part becomes the package path under /Game
+        FString PathPart = Rel.Left(SlashIdx);
+        AssetBaseName = Rel.Mid(SlashIdx + 1);
+        PackagePath = FString::Printf(TEXT("/Game/%s"), *PathPart);
+    }
+    // Simple asset name only: "Asset"
+    else
+    {
+        AssetBaseName = Name;
+    }
+
+    // Configure FARFilter: search under PackagePath for Blueprint class
+    FARFilter Filter;
+    if (PackagePath.IsEmpty())
+    {
+        Filter.bRecursivePaths = true;
+        PackagePath = TEXT("/Game/");
+    }
+    Filter.PackagePaths.Add(*PackagePath);
+    Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+    Filter.bRecursiveClasses = true;
+
+    // Query the AssetRegistry
+    FAssetRegistryModule& ARM = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+    IAssetRegistry& AssetRegistry = ARM.Get();
+    TArray<FAssetData> AllAssets;
+    AssetRegistry.GetAssets(Filter, AllAssets);
+
+    // Filter by AssetName and return matches
+    TArray<FAssetData> Matching;
+    for (const FAssetData& Data : AllAssets)
+    {
+        if (Data.AssetName.ToString().Equals(AssetBaseName, ESearchCase::IgnoreCase))
+        {
+            Matching.Add(Data);
+        }
+    }
+
+    return Matching;
+}

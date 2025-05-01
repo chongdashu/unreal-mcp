@@ -56,4 +56,7 @@ public:
     // Property utilities
     static bool SetObjectProperty(UObject* Object, const FString& PropertyName, 
                                  const TSharedPtr<FJsonValue>& Value, FString& OutErrorMessage);
+
+    // Asset utilities
+    static TArray<FAssetData> FindBlueprintAssets(const FString& BlueprintAssetName);
 }; 
