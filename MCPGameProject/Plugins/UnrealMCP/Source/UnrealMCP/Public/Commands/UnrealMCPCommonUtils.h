@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Json.h"
+#include "AssetRegistry/AssetData.h"
+#include "Dom/JsonObject.h"
 
 // Forward declarations
 class AActor;
@@ -31,7 +33,8 @@ public:
     static FVector2D GetVector2DFromJson(const TSharedPtr<FJsonObject>& JsonObject, const FString& FieldName);
     static FVector GetVectorFromJson(const TSharedPtr<FJsonObject>& JsonObject, const FString& FieldName);
     static FRotator GetRotatorFromJson(const TSharedPtr<FJsonObject>& JsonObject, const FString& FieldName);
-    
+    static TSharedPtr<FJsonObject> CreateAssetChoicesResponse(const TArray<FAssetData>& MatchingAssets);
+
     // Actor utilities
     static TSharedPtr<FJsonValue> ActorToJson(AActor* Actor);
     static TSharedPtr<FJsonObject> ActorToJsonObject(AActor* Actor, bool bDetailed = false);
@@ -56,4 +59,8 @@ public:
     // Property utilities
     static bool SetObjectProperty(UObject* Object, const FString& PropertyName, 
                                  const TSharedPtr<FJsonValue>& Value, FString& OutErrorMessage);
-}; 
+
+    // Asset utilities
+    static TArray<FAssetData> FindBlueprintAssets(const FString& BlueprintAssetName);
+
+};
