@@ -414,11 +414,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
 
     TArray<FAssetData> MatchingAssets = FUnrealMCPCommonUtils::FindBlueprintAssets(BlueprintName);
 
-    if (MatchingAssets.Num() == 0)
-    {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("No matching assets found for '%s'"), *BlueprintName));
-    }
-    else if (MatchingAssets.Num() == 1)
+    if (MatchingAssets.Num() == 1)
     {
         // Single match, proceed to spawn
         FString AssetPath = MatchingAssets[0].GetObjectPathString();
@@ -470,20 +466,10 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
     }
     else
     {
-        // Multiple matches, ask user to choose
-        TArray<TSharedPtr<FJsonValue>> AssetChoices;
-        for (const FAssetData& AssetData : MatchingAssets)
-        {
-            TSharedPtr<FJsonObject> AssetInfo = MakeShared<FJsonObject>();
-            AssetInfo->SetStringField(TEXT("name"), AssetData.AssetName.ToString());
-            AssetInfo->SetStringField(TEXT("path"), AssetData.ObjectPath.ToString());
-            AssetChoices.Add(MakeShared<FJsonValueObject>(AssetInfo));
-        }
-
-        TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
-        Response->SetArrayField(TEXT("choices"), AssetChoices);
-        return Response;
+        return FUnrealMCPCommonUtils::CreateAssetChoicesResponse(MatchingAssets);
     }
+
+    return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("No matching assets found for '%s'"), *BlueprintName));
 }
 
 

@@ -795,3 +795,21 @@ TArray<FAssetData> FUnrealMCPCommonUtils::FindBlueprintAssets(const FString& Blu
 
     return Matching;
 }
+
+TSharedPtr<FJsonObject> FUnrealMCPCommonUtils::CreateAssetChoicesResponse(const TArray<FAssetData>& MatchingAssets)
+{
+    TArray<TSharedPtr<FJsonValue>> AssetChoices;
+    for (const FAssetData& AssetData : MatchingAssets)
+    {
+        TSharedPtr<FJsonObject> AssetInfo = MakeShared<FJsonObject>();
+        AssetInfo->SetStringField(TEXT("name"), AssetData.AssetName.ToString());
+        AssetInfo->SetStringField(TEXT("path"), AssetData.ObjectPath.ToString());
+        AssetChoices.Add(MakeShared<FJsonValueObject>(AssetInfo));
+    }
+
+    TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
+    Response->SetArrayField(TEXT("choices"), AssetChoices);
+    Response->SetBoolField(TEXT("selection_required"), true);
+    Response->SetStringField(TEXT("message"), TEXT("Multiple matches found. Please select an asset to spawn."));
+    return Response;
+}
